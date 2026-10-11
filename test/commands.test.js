@@ -9,13 +9,15 @@ const request = {
   subtitleTypes: ['manual'],
   subtitleLanguages: ['zh'],
   quality: '1080',
-  cookie: { type: 'chrome' },
+  cookie: { type: 'file', path: '/tmp/bilifetch-cookies.txt' },
 };
 
-test('builds a probe command with browser cookies and no playlist', () => {
+test('builds a probe command with the persisted cookie file and no playlist', () => {
   const args = buildProbeArguments(request);
   assert.ok(args.includes('--list-subs'));
-  assert.ok(args.includes('chrome'));
+  assert.ok(args.includes('--cookies'));
+  assert.ok(args.includes('/tmp/bilifetch-cookies.txt'));
+  assert.ok(!args.includes('--cookies-from-browser'));
   assert.equal(args.at(-1), request.url);
 });
 
@@ -30,4 +32,14 @@ test('builds independent video, audio and subtitle tasks', () => {
 test('omits only the subtitle task when no selected track exists', () => {
   const tasks = buildDownloadTasks(request, []);
   assert.deepEqual(tasks.map((task) => task.id), ['video', 'audio']);
+});
+
+test('downloads automatic caption sources and converts subtitles to SRT', () => {
+  const tasks = buildDownloadTasks(request, [{ tag: 'zh', type: 'ai', language: 'zh', source: 'automatic' }]);
+  const subtitles = tasks.find((task) => task.id === 'subtitles');
+  assert.ok(subtitles.arguments.includes('--write-auto-subs'));
+  assert.equal(subtitles.arguments[subtitles.arguments.indexOf('--convert-subs') + 1], 'srt');
+  assert.ok(subtitles.arguments.includes('after_video:SUBTITLE_FILES:%(requested_subtitles.:.filepath)j'));
+  assert.ok(subtitles.arguments.includes('--no-simulate'));
+  assert.ok(buildProbeArguments(request).includes('--skip-download'));
 });

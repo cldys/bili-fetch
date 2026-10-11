@@ -34,3 +34,17 @@ test('reports missing subtitle combinations without discarding available tracks'
   assert.deepEqual(result.tracks.map((track) => track.tag), ['zh-Hans', 'ai-en']);
   assert.deepEqual(result.missing, ['人工英文字幕', 'AI中文字幕']);
 });
+
+test('distinguishes login-required subtitles from missing subtitles', () => {
+  const result = parseProbeOutput(
+    'Language Formats\ndanmaku xml\nPROBE:{"id":"BV123","subtitles":{"danmaku":[{}]}}',
+    'WARNING: [BiliBili] Subtitles are only available when logged in.',
+  );
+  assert.equal(result.authRequired, true);
+  assert.deepEqual(result.tracks, []);
+});
+
+test('does not treat empty subtitle format lists or diagnostic logs as available subtitles', () => {
+  const result = parseProbeOutput('zh diagnostic text\nPROBE:{"id":"BV123","subtitles":{"zh":[]},"automatic_captions":{"en":[]}}');
+  assert.deepEqual(result.tracks, []);
+});

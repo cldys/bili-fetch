@@ -26,13 +26,15 @@ function uniqueTracks(tracks) {
 
 function tracksFromMetadata(metadata) {
   const tracks = [];
-  for (const tag of Object.keys(metadata?.subtitles || {})) {
+  for (const [tag, formats] of Object.entries(metadata?.subtitles || {})) {
+    if (!Array.isArray(formats) || !formats.length) continue;
     const track = classifySubtitleTag(tag, 'manual');
     if (track) tracks.push(track);
   }
-  for (const tag of Object.keys(metadata?.automatic_captions || {})) {
+  for (const [tag, formats] of Object.entries(metadata?.automatic_captions || {})) {
+    if (!Array.isArray(formats) || !formats.length) continue;
     const track = classifySubtitleTag(tag, 'ai');
-    if (track) tracks.push(track);
+    if (track) tracks.push({ ...track, source: 'automatic' });
   }
   return uniqueTracks(tracks);
 }
@@ -41,13 +43,15 @@ function fallbackTracks(output) {
   const tracks = [];
   for (const line of String(output || '').split(/\r?\n/)) {
     const firstColumn = line.trim().split(/\s+/)[0];
-    const track = classifySubtitleTag(firstColumn);
+    const track = classifySubtitleTag(firstColumn, undefined);
     if (track) tracks.push(track);
   }
   return uniqueTracks(tracks);
 }
 
 export function parseProbeOutput(stdout, stderr = '') {
+  const diagnosticOutput = `${stdout}\n${stderr}`;
+  const authRequired = /subtitles are only available when logged in|need_login_subtitle/i.test(diagnosticOutput);
   const markerLine = String(stdout)
     .split(/\r?\n/)
     .find((line) => line.startsWith('PROBE:'));
@@ -62,13 +66,14 @@ export function parseProbeOutput(stdout, stderr = '') {
   }
 
   let tracks = tracksFromMetadata(metadata);
-  if (!tracks.length) tracks = fallbackTracks(`${stdout}\n${stderr}`);
+  if (!markerLine && !tracks.length) tracks = fallbackTracks(diagnosticOutput);
 
   return {
     id: metadata.id || '',
     title: metadata.title || '',
     thumbnail: String(metadata.thumbnail || '').replace(/^http:\/\//i, 'https://'),
     duration: Number.isFinite(metadata.duration) ? metadata.duration : null,
+    authRequired,
     tracks,
   };
 }

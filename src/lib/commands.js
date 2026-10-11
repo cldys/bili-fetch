@@ -1,11 +1,8 @@
 import path from 'node:path';
 
 export function cookieArguments(cookie) {
-  if (cookie.type === 'chrome' || cookie.type === 'safari') {
-    return ['--cookies-from-browser', cookie.type];
-  }
   if (cookie.type === 'file') return ['--cookies', cookie.path];
-  return [];
+  throw new Error('下载任务缺少有效的 cookies.txt');
 }
 
 export function buildProbeArguments({ url, cookie }) {
@@ -13,6 +10,7 @@ export function buildProbeArguments({ url, cookie }) {
     '--ignore-config',
     '--no-playlist',
     ...cookieArguments(cookie),
+    '--skip-download',
     '--list-subs',
     '--print',
     'PROBE:%()j',
@@ -91,10 +89,16 @@ export function buildDownloadTasks(request, subtitleTracks = []) {
         ...commonDownloadArguments(request, outputDirectory),
         '--skip-download',
         '--write-subs',
+        ...(subtitleTracks.some((track) => track.source === 'automatic') ? ['--write-auto-subs'] : []),
         '--sub-langs',
         subtitleTracks.map((track) => track.tag).join(','),
         '--sub-format',
         'srt/best',
+        '--convert-subs',
+        'srt',
+        '--no-simulate',
+        '--print',
+        'after_video:SUBTITLE_FILES:%(requested_subtitles.:.filepath)j',
         request.url,
       ],
     });

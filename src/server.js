@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { DEFAULT_DOWNLOAD_DIRECTORY, locateExecutable, runtimeEnvironment } from './lib/config.js';
 import { buildProbeArguments } from './lib/commands.js';
-import { createJob, getJob, subscribeToJob } from './lib/jobs.js';
+import { CookieStore } from './lib/cookie-store.js';
+import { createJob, friendlyFailure, getJob, subscribeToJob } from './lib/jobs.js';
 import { runCommand } from './lib/process.js';
 import { parseProbeOutput } from './lib/subtitles.js';
-import { validateBilibiliUrl, validateCookie, validateDownloadRequest } from './lib/validation.js';
+import { validateBilibiliUrl, validateDownloadRequest } from './lib/validation.js';
 
 const execFileAsync = promisify(execFile);
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,7 @@ const publicDirectory = path.resolve(currentDirectory, '..', 'public');
 const port = Number(process.env.PORT || 4317);
 const host = '127.0.0.1';
 const env = runtimeEnvironment();
+const cookieStore = new CookieStore({ directory: process.env.BILIFETCH_DATA_DIRECTORY });
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -72,9 +74,22 @@ async function toolVersion(executable, argumentsList = ['--version']) {
 }
 
 async function handleApi(request, response, pathname) {
-  const ytDlp = await locateExecutable('yt-dlp');
+  if (request.method === 'POST' && pathname === '/api/cookies/import') {
+    const body = await readJson(request);
+    const imported = await cookieStore.importCookies({ content: body.content });
+    return sendJson(response, 201, imported);
+  }
+
+  if (request.method === 'GET' && pathname === '/api/cookies/status') {
+    return sendJson(response, 200, { ...cookieStore.status(), platform: 'bilibili' });
+  }
+
+  if (request.method === 'DELETE' && pathname === '/api/cookies') {
+    return sendJson(response, 200, await cookieStore.clear());
+  }
 
   if (request.method === 'GET' && pathname === '/api/health') {
+    const ytDlp = await locateExecutable('yt-dlp');
     const ffmpeg = await locateExecutable('ffmpeg');
     const [ytDlpVersion, ffmpegVersion] = await Promise.all([
       toolVersion(ytDlp),
@@ -104,26 +119,41 @@ async function handleApi(request, response, pathname) {
   }
 
   if (request.method === 'POST' && pathname === '/api/probe') {
-    if (!ytDlp) return sendJson(response, 503, { error: '未找到 yt-dlp，请先执行 brew install yt-dlp' });
     const body = await readJson(request);
+    const url = validateBilibiliUrl(body.url);
+    let cookie;
+    try {
+      cookie = cookieStore.resolve();
+    } catch (error) {
+      return sendJson(response, 428, { code: error.code, error: error.message });
+    }
+    const ytDlp = await locateExecutable('yt-dlp');
+    if (!ytDlp) return sendJson(response, 503, { error: '未找到 yt-dlp，请先执行 brew install yt-dlp' });
     const probeRequest = {
-      url: validateBilibiliUrl(body.url),
-      cookie: validateCookie(body.cookie),
+      url,
+      cookie,
     };
     const result = await runCommand(ytDlp, buildProbeArguments(probeRequest), { env });
     if (result.code !== 0) {
-      const message = `${result.stderr}\n${result.stdout}`.trim().split(/\r?\n/).filter(Boolean).at(-1);
-      return sendJson(response, 422, { error: message || '资源检测失败' });
+      return sendJson(response, 422, { error: friendlyFailure(result) });
     }
     return sendJson(response, 200, parseProbeOutput(result.stdout, result.stderr));
   }
 
   if (request.method === 'POST' && pathname === '/api/download') {
-    if (!ytDlp) return sendJson(response, 503, { error: '未找到 yt-dlp，请先执行 brew install yt-dlp' });
     const body = await readJson(request);
     const downloadRequest = validateDownloadRequest(body, DEFAULT_DOWNLOAD_DIRECTORY);
-    if ((downloadRequest.outputs.video || downloadRequest.outputs.audio) && !(await locateExecutable('ffmpeg'))) {
-      return sendJson(response, 503, { error: '视频合并和音频转换需要 ffmpeg，请先执行 brew install ffmpeg' });
+    let cookie;
+    try {
+      cookie = cookieStore.resolve();
+    } catch (error) {
+      return sendJson(response, 428, { code: error.code, error: error.message });
+    }
+    const ytDlp = await locateExecutable('yt-dlp');
+    if (!ytDlp) return sendJson(response, 503, { error: '未找到 yt-dlp，请先执行 brew install yt-dlp' });
+    downloadRequest.cookie = cookie;
+    if (!(await locateExecutable('ffmpeg'))) {
+      return sendJson(response, 503, { error: '视频合并、音频提取和字幕转换需要 ffmpeg，请先执行 brew install ffmpeg' });
     }
     return sendJson(response, 202, createJob(downloadRequest, ytDlp, env));
   }
@@ -167,6 +197,15 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
+await cookieStore.initialize();
+
 server.listen(port, host, () => {
   console.log(`BiliFetch is running at http://${host}:${port}`);
 });
+
+function shutdown() {
+  server.close(() => process.exit(0));
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
