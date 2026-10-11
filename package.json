@@ -1,0 +1,14 @@
+{
+  "name": "mac-bilibili-downloader",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A local macOS web UI for downloading Bilibili media with yt-dlp.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

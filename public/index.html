@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="在 macOS 本机使用 yt-dlp 下载 Bilibili 视频、音频和字幕。">
+    <title>BiliFetch · 本地下载器</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="shell">
+      <header class="masthead">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div>
+          <p class="eyebrow">LOCAL · PRIVATE · YT-DLP</p>
+          <h1>BiliFetch</h1>
+          <p class="subtitle">把想保存的画面、声音与字幕，清楚地带回本地。</p>
+        </div>
+        <div id="tool-status" class="tool-status checking">
+          <span class="status-dot"></span>
+          <span>正在检查工具</span>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <form id="download-form" class="control-panel">
+          <div class="section-heading">
+            <span class="step-number">01</span>
+            <div>
+              <h2>资源地址</h2>
+              <p>支持 Bilibili 视频和 b23.tv 短链接</p>
+            </div>
+          </div>
+
+          <div class="url-row">
+            <label class="field grow">
+              <span class="field-label">Bilibili URL</span>
+              <input id="url" name="url" type="url" required placeholder="https://www.bilibili.com/video/BV..." autocomplete="off">
+            </label>
+            <button id="probe-button" class="secondary-button" type="button">检测资源</button>
+          </div>
+
+          <div id="resource-preview" class="resource-preview hidden" aria-live="polite">
+            <img id="preview-image" alt="视频封面">
+            <div>
+              <p id="preview-id" class="preview-id"></p>
+              <h3 id="preview-title"></h3>
+              <div id="subtitle-summary" class="tag-list"></div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="section-heading">
+            <span class="step-number">02</span>
+            <div>
+              <h2>选择内容</h2>
+              <p>可同时选择，任务互不阻断</p>
+            </div>
+          </div>
+
+          <div class="choice-grid primary-choices">
+            <label class="choice-card">
+              <input id="output-video" type="checkbox" checked>
+              <span class="choice-icon">▶</span>
+              <span><strong>视频</strong><small>画面与声音合并为 MP4</small></span>
+            </label>
+            <label class="choice-card">
+              <input id="output-audio" type="checkbox">
+              <span class="choice-icon">♪</span>
+              <span><strong>音频</strong><small>单独导出为 M4A</small></span>
+            </label>
+            <label class="choice-card">
+              <input id="output-subtitles" type="checkbox">
+              <span class="choice-icon">CC</span>
+              <span><strong>字幕</strong><small>保存为独立 SRT 文件</small></span>
+            </label>
+          </div>
+
+          <div id="subtitle-options" class="subtitle-options hidden">
+            <fieldset>
+              <legend>字幕类型</legend>
+              <label class="check-pill"><input id="subtitle-manual" type="checkbox" checked><span>人工字幕</span></label>
+              <label class="check-pill"><input id="subtitle-ai" type="checkbox"><span>AI 字幕</span></label>
+            </fieldset>
+            <fieldset>
+              <legend>字幕语言</legend>
+              <label class="check-pill"><input id="language-zh" type="checkbox" checked><span>中文</span></label>
+              <label class="check-pill"><input id="language-en" type="checkbox"><span>英文</span></label>
+            </fieldset>
+            <p class="hint">所选字幕不存在时只会提示，不会中断视频或音频下载。</p>
+          </div>
+
+          <div class="settings-grid">
+            <label class="field">
+              <span class="field-label">视频质量</span>
+              <select id="quality">
+                <option value="best">最佳质量</option>
+                <option value="1080">最高 1080p</option>
+                <option value="720">最高 720p</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">登录状态</span>
+              <select id="cookie-type">
+                <option value="none">不使用 Cookie</option>
+                <option value="chrome">读取 Chrome</option>
+                <option value="safari">读取 Safari</option>
+                <option value="file">cookies.txt 文件</option>
+              </select>
+            </label>
+          </div>
+
+          <label id="cookie-path-field" class="field hidden">
+            <span class="field-label">Cookie 文件绝对路径</span>
+            <input id="cookie-path" type="text" placeholder="/Users/you/Downloads/cookies.txt">
+          </label>
+
+          <div class="directory-row">
+            <label class="field grow">
+              <span class="field-label">保存目录</span>
+              <input id="directory" type="text" required>
+            </label>
+            <button id="directory-button" class="icon-button" type="button" aria-label="选择保存目录">选择…</button>
+          </div>
+
+          <div id="form-message" class="form-message hidden" role="alert"></div>
+          <button id="download-button" class="download-button" type="submit">
+            <span>开始下载</span>
+            <span aria-hidden="true">↘</span>
+          </button>
+        </form>
+
+        <aside class="activity-panel">
+          <div class="activity-header">
+            <div>
+              <p class="eyebrow">ACTIVITY</p>
+              <h2>下载进度</h2>
+            </div>
+            <span id="job-state" class="state-badge idle">待命</span>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <div class="orbit" aria-hidden="true"><span></span></div>
+            <h3>还没有任务</h3>
+            <p>粘贴链接并选择内容，下载状态会在这里实时出现。</p>
+          </div>
+
+          <div id="job-content" class="job-content hidden">
+            <p id="job-message" class="job-message"></p>
+            <div id="warning-list" class="warning-list"></div>
+            <div id="task-list" class="task-list"></div>
+            <details class="logs-panel">
+              <summary>查看运行日志</summary>
+              <pre id="job-logs"></pre>
+            </details>
+          </div>
+
+          <div class="privacy-note">
+            <span aria-hidden="true">⌂</span>
+            <p><strong>仅在本机运行</strong><br>服务只监听 127.0.0.1，Cookie 内容不会显示在页面或日志中。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
