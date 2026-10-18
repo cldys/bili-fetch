@@ -71,8 +71,9 @@ function parseProgress(line) {
   return match ? Number(match[1]) : null;
 }
 
-async function executeTask(job, task, plan, executable, env) {
-  await mkdir(plan.outputDirectory, { recursive: true });
+async function executeTask(job, task, plan, executable, env, prepareDirectory) {
+  if (prepareDirectory) await prepareDirectory(plan.outputDirectory);
+  else await mkdir(plan.outputDirectory, { recursive: true });
   task.status = 'running';
   task.progress = 0;
   task.message = `正在下载${task.label}…`;
@@ -159,7 +160,7 @@ async function runJob(job, request, executable, env) {
 
   for (let index = 0; index < plans.length; index += 1) {
     try {
-      await executeTask(job, job.tasks[index], plans[index], executable, env);
+      await executeTask(job, job.tasks[index], plans[index], executable, env, request.prepareDirectory);
     } catch (error) {
       job.tasks[index].status = 'failed';
       job.tasks[index].message = error.message;

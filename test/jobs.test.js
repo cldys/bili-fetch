@@ -6,7 +6,7 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { createJob, friendlyFailure, getJob, subscribeToJob } from '../src/lib/jobs.js';
 
-async function runFixtureJob(outputs, metadata, probeFails = false, urls, queueAnother = false) {
+async function runFixtureJob(outputs, metadata, probeFails = false, urls, queueAnother = false, prepareDirectory) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bilifetch-job-test-'));
   try {
     const subtitlesDirectory = path.join(directory, 'Subtitles');
@@ -45,6 +45,7 @@ if (args.includes('--list-subs')) {
       ...(urls ? { urls } : {}),
       outputs, quality: 'best', subtitleTypes: ['ai'], subtitleLanguages: ['zh'],
       cookie: { type: 'file', path: path.join(directory, 'fake-cookies.txt') },
+      prepareDirectory,
     };
     const env = { ...process.env, FIXTURE_CALLS: callsFile, FIXTURE_METADATA: JSON.stringify(metadata), FIXTURE_FAIL: String(probeFails) };
     const job = createJob(request, executable, env);
@@ -107,6 +108,22 @@ test('failed subtitle probing still allows a complete audio task', async () => {
   assert.equal(job.tasks[0].id, 'audio');
   assert.match(job.warnings[0], /字幕检测失败.*fixture probe failed/);
   assert.match(friendlyFailure({ stdout: '', stderr: 'ERROR: unrelated failure', code: 1 }), /unrelated failure/);
+});
+
+test('checks each output directory at execution time and blocks an unsafe path before starting yt-dlp', async () => {
+  const checked = [];
+  const { job, calls, artifacts } = await runFixtureJob({ video: true, audio: true, subtitles: true },
+    { id: 'BV123', subtitles: { 'ai-zh': [{}] } }, false, undefined, false, async (directory) => {
+      checked.push(path.basename(directory));
+      if (directory.endsWith('/Video')) throw new Error('目录中的符号链接指向共享范围之外');
+      await mkdir(directory, { recursive: true });
+    });
+  assert.deepEqual(checked, ['Video', 'Audio', 'Subtitles']);
+  assert.equal(job.status, 'partial');
+  assert.equal(job.tasks[0].status, 'failed');
+  assert.match(job.tasks[0].message, /共享范围之外/);
+  assert.equal(calls.some((args) => args.includes('--merge-output-format')), false);
+  assert.equal(artifacts['Fixture [BV123].ai-zh_清理.txt'], '大家好今天');
 });
 
 test('processes batch links serially and creates a separate SRT and TXT for each video', async () => {

@@ -6,7 +6,8 @@
   "description": "A local macOS web UI for downloading Bilibili media with yt-dlp.",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:docker": "node scripts/docker-smoke.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,34 @@
+services:
+  bilifetch:
+    build:
+      context: .
+    image: bilifetch:local
+    init: true
+    user: "${BILIFETCH_UID:-1000}:${BILIFETCH_GID:-1000}"
+    ports:
+      - "127.0.0.1:${BILIFETCH_HOST_PORT:-4317}:4317"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4317"
+      HOME: /tmp
+      BILIFETCH_DATA_DIRECTORY: /data
+      BILIFETCH_DOWNLOAD_ROOT: ${BILIFETCH_HOST_DOWNLOADS_DIRECTORY:-${HOME}/Downloads}
+      BILIFETCH_DOWNLOAD_DIRECTORY: ${BILIFETCH_HOST_DOWNLOADS_DIRECTORY:-${HOME}/Downloads}/download/BiliFetch
+    volumes:
+      - type: bind
+        source: ${BILIFETCH_HOST_DOWNLOADS_DIRECTORY:-${HOME}/Downloads}
+        target: ${BILIFETCH_HOST_DOWNLOADS_DIRECTORY:-${HOME}/Downloads}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BILIFETCH_HOST_DATA_DIRECTORY:-${HOME}/Library/Application Support/BiliFetch}
+        target: /data
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4317/api/health').then(async r => { if (!r.ok || !(await r.json()).ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped

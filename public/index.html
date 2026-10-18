@@ -173,11 +173,40 @@
 
           <div class="privacy-note">
             <span aria-hidden="true">⌂</span>
-            <p><strong>仅在本机运行</strong><br>服务只监听 127.0.0.1；Cookie 使用 0600 权限持久保存在本机 Application Support，内容和路径不会显示在页面或日志中。</p>
+            <p><strong>仅在本机使用</strong><br>默认仅通过本机 127.0.0.1 访问；Cookie 持久保存在数据目录，Docker 运行时通过挂载保留，内容不会显示在页面或日志中。</p>
           </div>
         </aside>
       </section>
     </main>
+
+    <dialog id="directory-dialog" class="directory-dialog" aria-labelledby="directory-title" aria-describedby="directory-description">
+      <div class="directory-dialog-heading">
+        <h2 id="directory-title">选择保存目录</h2>
+        <button id="directory-cancel" class="icon-button" type="button">取消</button>
+      </div>
+      <p id="directory-description" class="hint">选择文件夹后，下载文件会直接保存到这里。</p>
+      <div class="directory-toolbar">
+        <button id="directory-roots" class="secondary-button" type="button">共享目录</button>
+        <button id="directory-up" class="secondary-button" type="button">上一级</button>
+      </div>
+      <form id="directory-path-form" class="directory-path-form">
+        <label class="field grow">
+          <span class="field-label">当前位置</span>
+          <input id="directory-path" type="text" placeholder="选择共享目录或输入完整路径" autocomplete="off">
+        </label>
+        <button id="directory-go" class="secondary-button" type="submit">前往</button>
+      </form>
+      <p id="directory-message" class="form-message hidden" role="alert"></p>
+      <div id="directory-list" class="directory-list" aria-live="polite"></div>
+      <form id="directory-create-form" class="directory-path-form">
+        <label class="field grow">
+          <span class="field-label">新建文件夹</span>
+          <input id="directory-name" type="text" placeholder="文件夹名称" autocomplete="off" required>
+        </label>
+        <button id="directory-create" class="secondary-button" type="submit">新建</button>
+      </form>
+      <button id="directory-confirm" class="download-button" type="button">保存到这里</button>
+    </dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

@@ -1,16 +1,16 @@
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import {
   DEFAULT_DOWNLOAD_DIRECTORY,
+  DOWNLOAD_ROOTS,
   locateExecutable,
   runtimeEnvironment,
 } from "./lib/config.js";
 import { buildProbeArguments } from "./lib/commands.js";
 import { CookieStore } from "./lib/cookie-store.js";
+import { DirectoryBrowser } from "./lib/directories.js";
 import {
   createJob,
   friendlyFailure,
@@ -24,12 +24,12 @@ import {
   validateDownloadRequest,
 } from "./lib/validation.js";
 
-const execFileAsync = promisify(execFile);
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.resolve(currentDirectory, "..", "public");
 const port = Number(process.env.PORT || 4317);
-const host = "127.0.0.1";
+const host = process.env.HOST || "127.0.0.1";
 const env = runtimeEnvironment();
+const directoryBrowser = new DirectoryBrowser(DOWNLOAD_ROOTS);
 const cookieStore = new CookieStore({
   directory: process.env.BILIFETCH_DATA_DIRECTORY,
 });
@@ -94,7 +94,7 @@ async function toolVersion(executable, argumentsList = ["--version"]) {
   }
 }
 
-async function handleApi(request, response, pathname) {
+async function handleApi(request, response, pathname, searchParams) {
   if (request.method === "POST" && pathname === "/api/cookies/import") {
     const body = await readJson(request);
     const imported = await cookieStore.importCookies({ content: body.content });
@@ -120,7 +120,7 @@ async function handleApi(request, response, pathname) {
       toolVersion(ffmpeg, ["-version"]),
     ]);
     return sendJson(response, 200, {
-      ok: Boolean(ytDlp),
+      ok: Boolean(ytDlp && ffmpeg),
       defaultDirectory: DEFAULT_DOWNLOAD_DIRECTORY,
       tools: {
         ytDlp: { found: Boolean(ytDlp), path: ytDlp, version: ytDlpVersion },
@@ -133,19 +133,20 @@ async function handleApi(request, response, pathname) {
     });
   }
 
+  if (request.method === "GET" && pathname === "/api/directories") {
+    return sendJson(response, 200, await directoryBrowser.list(searchParams.get("path")));
+  }
+
+  if (request.method === "POST" && pathname === "/api/directories") {
+    const body = await readJson(request);
+    return sendJson(response, 201, await directoryBrowser.create(body.directory, body.name));
+  }
+
   if (request.method === "POST" && pathname === "/api/select-directory") {
-    try {
-      const { stdout } = await execFileAsync("/usr/bin/osascript", [
-        "-e",
-        'POSIX path of (choose folder with prompt "选择下载目录")',
-      ]);
-      return sendJson(response, 200, {
-        directory: stdout.trim().replace(/\/$/, ""),
-      });
-    } catch (error) {
-      if (error.code === 1) return sendJson(response, 200, { cancelled: true });
-      throw error;
-    }
+    const body = await readJson(request);
+    return sendJson(response, 200, {
+      directory: await directoryBrowser.resolve(body.directory, { writable: true }),
+    });
   }
 
   if (request.method === "POST" && pathname === "/api/probe") {
@@ -163,7 +164,7 @@ async function handleApi(request, response, pathname) {
     const ytDlp = await locateExecutable("yt-dlp");
     if (!ytDlp)
       return sendJson(response, 503, {
-        error: "未找到 yt-dlp，请先执行 brew install yt-dlp",
+        error: "未找到 yt-dlp；Docker 运行请重新构建镜像，本地运行请执行 brew install yt-dlp",
       });
     const probeRequest = {
       url,
@@ -197,16 +198,18 @@ async function handleApi(request, response, pathname) {
         error: error.message,
       });
     }
+    downloadRequest.directory = await directoryBrowser.resolve(downloadRequest.directory, { create: true, writable: true });
+    downloadRequest.prepareDirectory = (directory) => directoryBrowser.resolve(directory, { create: true, writable: true });
     const ytDlp = await locateExecutable("yt-dlp");
     if (!ytDlp)
       return sendJson(response, 503, {
-        error: "未找到 yt-dlp，请先执行 brew install yt-dlp",
+        error: "未找到 yt-dlp；Docker 运行请重新构建镜像，本地运行请执行 brew install yt-dlp",
       });
     downloadRequest.cookie = cookie;
     if (!(await locateExecutable("ffmpeg"))) {
       return sendJson(response, 503, {
         error:
-          "视频合并、音频提取和字幕转换需要 ffmpeg，请先执行 brew install ffmpeg",
+          "需要 ffmpeg；Docker 运行请重新构建镜像，本地运行请执行 brew install ffmpeg",
       });
     }
     return sendJson(response, 202, createJob(downloadRequest, ytDlp, env));
@@ -254,8 +257,11 @@ const server = http.createServer(async (request, response) => {
       request.url,
       `http://${request.headers.host || `${host}:${port}`}`,
     );
+    if (url.pathname.startsWith("/api/") && request.headers.origin && request.headers.origin !== url.origin) {
+      return sendJson(response, 403, { error: "只允许从本应用页面访问接口" });
+    }
     if (url.pathname.startsWith("/api/"))
-      return await handleApi(request, response, url.pathname);
+      return await handleApi(request, response, url.pathname, url.searchParams);
     if (await serveStatic(response, url.pathname)) return;
     sendJson(response, 404, { error: "页面不存在" });
   } catch (error) {
@@ -263,10 +269,11 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
+await directoryBrowser.resolve(DEFAULT_DOWNLOAD_DIRECTORY, { create: true, writable: true });
 await cookieStore.initialize();
 
 server.listen(port, host, () => {
-  console.log(`BiliFetch is running at http://${host}:${port}`);
+  console.log(`BiliFetch is running at http://${host}:${server.address().port}`);
 });
 
 function shutdown() {
