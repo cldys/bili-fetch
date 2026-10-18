@@ -1,21 +1,26 @@
-import { access } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import { access } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const EXECUTABLE_CANDIDATES = {
-  'yt-dlp': [
-    '/opt/homebrew/bin/yt-dlp',
-    '/usr/local/bin/yt-dlp',
-    '/usr/bin/yt-dlp',
+  "yt-dlp": [
+    "/opt/homebrew/bin/yt-dlp",
+    "/usr/local/bin/yt-dlp",
+    "/usr/bin/yt-dlp",
   ],
   ffmpeg: [
-    '/opt/homebrew/bin/ffmpeg',
-    '/usr/local/bin/ffmpeg',
-    '/usr/bin/ffmpeg',
+    "/opt/homebrew/bin/ffmpeg",
+    "/usr/local/bin/ffmpeg",
+    "/usr/bin/ffmpeg",
   ],
 };
 
-export const DEFAULT_DOWNLOAD_DIRECTORY = path.join(os.homedir(), 'Downloads', 'BiliFetch');
+export const DEFAULT_DOWNLOAD_DIRECTORY = path.join(
+  os.homedir(),
+  "Downloads",
+  "download",
+  "BiliFetch",
+);
 
 async function isExecutable(filePath) {
   try {
@@ -27,7 +32,9 @@ async function isExecutable(filePath) {
 }
 
 export async function locateExecutable(name) {
-  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const pathEntries = (process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean);
   const candidates = [
     ...(EXECUTABLE_CANDIDATES[name] || []),
     ...pathEntries.map((entry) => path.join(entry, name)),
@@ -41,9 +48,11 @@ export async function locateExecutable(name) {
 }
 
 export function runtimeEnvironment() {
-  const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin'];
+  const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
   return {
     ...process.env,
-    PATH: [...extraPaths, process.env.PATH || ''].filter(Boolean).join(path.delimiter),
+    PATH: [...extraPaths, process.env.PATH || ""]
+      .filter(Boolean)
+      .join(path.delimiter),
   };
 }
