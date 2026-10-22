@@ -18,13 +18,10 @@ function createApp(fetchHandler, cookieStatus = { platform: 'bilibili', configur
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
       addEventListener(event, handler) { this.listeners[event] = handler; },
-      showModal() { this.open = true; },
-      close() { this.open = false; },
     };
   }
   const context = vm.createContext({
     URL,
-    encodeURIComponent,
     document: {
       querySelector(selector) {
         if (!elements.has(selector)) elements.set(selector, node(html.match(new RegExp(`<[^>]+id="${selector.slice(1)}"[^>]*>`))?.[0]));
@@ -226,75 +223,4 @@ test('batch submission and progress keep the stream open until all links have fi
   assert.equal(stream.closed, true);
   assert.equal(app.elements.get('#download-button').disabled, false);
   assert.match(visibleText(app.elements.get('#task-list')), /Fixture failure/);
-});
-
-test('web directory picker navigates and creates folders, confirming only the chosen path', async () => {
-  const root = '/shared/下载目录';
-  const child = `${root}/中文 folder`;
-  const created = `${child}/新建文件夹`;
-  const app = createApp((url, options) => {
-    if (url === '/api/directories' && options?.method === 'POST') {
-      assert.deepEqual(JSON.parse(options.body), { directory: child, name: '新建文件夹' });
-      return { directory: created };
-    }
-    if (url === '/api/select-directory') {
-      assert.deepEqual(JSON.parse(options.body), { directory: created });
-      return { directory: created };
-    }
-    const directory = url.includes('?') ? decodeURIComponent(url.split('?path=')[1]) : null;
-    return { directory, parent: directory === root ? null : root,
-      directories: !directory ? [{ name: root, path: root }] : directory === root ? [{ name: '中文 folder', path: child }] : [] };
-  });
-  app.elements.get('#directory').value = root;
-  await app.elements.get('#directory-button').listeners.click();
-  assert.equal(app.elements.get('#directory-dialog').open, true);
-  assert.equal(app.elements.get('#directory-up').disabled, true);
-  await app.elements.get('#directory-list').children[0].listeners.click();
-  assert.equal(app.elements.get('#directory-path').value, child);
-  assert.equal(app.elements.get('#directory').value, root);
-  app.elements.get('#directory-name').value = '新建文件夹';
-  await app.elements.get('#directory-create-form').listeners.submit({ preventDefault() {} });
-  assert.equal(app.elements.get('#directory-path').value, created);
-  await app.elements.get('#directory-confirm').listeners.click();
-  assert.equal(app.elements.get('#directory').value, created);
-  assert.equal(app.elements.get('#directory-dialog').open, false);
-});
-
-test('directory picker falls back to shared roots and cancel preserves the original path', async () => {
-  const app = createApp((url) => url.includes('?') ? { error: '该目录未共享' }
-    : { directory: null, parent: null, directories: [{ name: '/shared', path: '/shared' }] });
-  app.elements.get('#directory').value = '/unmounted';
-  await app.elements.get('#directory-button').listeners.click();
-  assert.match(app.elements.get('#directory-message').textContent, /未共享/);
-  assert.equal(app.elements.get('#directory-confirm').disabled, true);
-  assert.equal(app.elements.get('#directory-create').disabled, true);
-  app.elements.get('#directory-cancel').listeners.click();
-  assert.equal(app.elements.get('#directory-dialog').open, false);
-  assert.equal(app.elements.get('#directory').value, '/unmounted');
-});
-
-test('a rejected save location leaves the picker open and does not change the download path', async () => {
-  const app = createApp((url) => url === '/api/select-directory' ? { error: '目录不可写' }
-    : { directory: '/shared', parent: null, directories: [] });
-  app.elements.get('#directory').value = '/shared';
-  await app.elements.get('#directory-button').listeners.click();
-  await app.elements.get('#directory-confirm').listeners.click();
-  assert.equal(app.elements.get('#directory-dialog').open, true);
-  assert.match(app.elements.get('#directory-message').textContent, /不可写/);
-  assert.equal(app.elements.get('#directory').value, '/shared');
-});
-
-test('confirming an edited directory path validates the displayed path instead of saving the previous folder', async () => {
-  const app = createApp((url, options) => {
-    if (url === '/api/select-directory') {
-      assert.equal(JSON.parse(options.body).directory, '/shared/edited');
-      return { directory: '/shared/edited' };
-    }
-    return { directory: '/shared', parent: null, directories: [] };
-  });
-  app.elements.get('#directory').value = '/shared';
-  await app.elements.get('#directory-button').listeners.click();
-  app.elements.get('#directory-path').value = '/shared/edited';
-  await app.elements.get('#directory-confirm').listeners.click();
-  assert.equal(app.elements.get('#directory').value, '/shared/edited');
 });

@@ -23,19 +23,6 @@ const elements = {
   languageEn: document.querySelector('#language-en'),
   probeButton: document.querySelector('#probe-button'),
   directoryButton: document.querySelector('#directory-button'),
-  directoryDialog: document.querySelector('#directory-dialog'),
-  directoryCancel: document.querySelector('#directory-cancel'),
-  directoryRoots: document.querySelector('#directory-roots'),
-  directoryUp: document.querySelector('#directory-up'),
-  directoryPathForm: document.querySelector('#directory-path-form'),
-  directoryPath: document.querySelector('#directory-path'),
-  directoryGo: document.querySelector('#directory-go'),
-  directoryMessage: document.querySelector('#directory-message'),
-  directoryList: document.querySelector('#directory-list'),
-  directoryCreateForm: document.querySelector('#directory-create-form'),
-  directoryName: document.querySelector('#directory-name'),
-  directoryCreate: document.querySelector('#directory-create'),
-  directoryConfirm: document.querySelector('#directory-confirm'),
   downloadButton: document.querySelector('#download-button'),
   toolStatus: document.querySelector('#tool-status'),
   formMessage: document.querySelector('#form-message'),
@@ -424,118 +411,16 @@ elements.probeButton.addEventListener('click', async () => {
   }
 });
 
-let selectedDirectory = null;
-let parentDirectory = null;
-let directoryBusy = false;
-
-function showDirectoryMessage(message) {
-  elements.directoryMessage.textContent = message;
-  elements.directoryMessage.classList.toggle('hidden', !message);
-}
-
-function setDirectoryBusy(busy) {
-  directoryBusy = busy;
-  elements.directoryCancel.disabled = busy;
-  elements.directoryRoots.disabled = busy;
-  elements.directoryUp.disabled = busy || !parentDirectory;
-  elements.directoryPath.disabled = busy;
-  elements.directoryGo.disabled = busy;
-  elements.directoryName.disabled = busy || !selectedDirectory;
-  elements.directoryCreate.disabled = busy || !selectedDirectory;
-  elements.directoryConfirm.disabled = busy || !selectedDirectory;
-  for (const button of elements.directoryList.children) button.disabled = busy;
-}
-
-async function loadDirectory(directory) {
-  setDirectoryBusy(true);
-  showDirectoryMessage('');
-  try {
-    const result = await api(`/api/directories${directory ? `?path=${encodeURIComponent(directory)}` : ''}`);
-    selectedDirectory = result.directory;
-    parentDirectory = result.parent;
-    elements.directoryPath.value = result.directory || '';
-    elements.directoryList.replaceChildren();
-    for (const entry of result.directories) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'directory-entry';
-      button.textContent = `▸ ${entry.name}`;
-      button.addEventListener('click', () => loadDirectory(entry.path));
-      elements.directoryList.append(button);
-    }
-    if (!result.directories.length) {
-      const empty = document.createElement('p');
-      empty.className = 'directory-empty';
-      empty.textContent = '此目录中没有子文件夹，可以直接保存到这里。';
-      elements.directoryList.append(empty);
-    }
-    return true;
-  } catch (error) {
-    showDirectoryMessage(error.message);
-    return false;
-  } finally {
-    setDirectoryBusy(false);
-  }
-}
-
 elements.directoryButton.addEventListener('click', async () => {
-  if (directoryBusy) return;
-  selectedDirectory = null;
-  parentDirectory = null;
-  elements.directoryName.value = '';
-  elements.directoryList.replaceChildren();
-  elements.directoryDialog.showModal();
-  const current = elements.directory.value.trim();
-  if (!await loadDirectory(current) && current) {
-    const message = elements.directoryMessage.textContent;
-    await loadDirectory(null);
-    showDirectoryMessage(`原保存目录无法打开：${message}。请选择共享目录，或在其中新建文件夹。`);
-  }
-});
-
-elements.directoryCancel.addEventListener('click', () => elements.directoryDialog.close());
-elements.directoryDialog.addEventListener('cancel', (event) => {
-  if (directoryBusy) event.preventDefault();
-});
-elements.directoryRoots.addEventListener('click', () => loadDirectory(null));
-elements.directoryUp.addEventListener('click', () => loadDirectory(parentDirectory));
-elements.directoryPathForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (!directoryBusy) await loadDirectory(elements.directoryPath.value.trim());
-});
-
-elements.directoryCreateForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (directoryBusy || !selectedDirectory) return;
-  setDirectoryBusy(true);
-  showDirectoryMessage('');
+  showMessage('');
+  setBusy(elements.directoryButton, true, '选择…');
   try {
-    const result = await api('/api/directories', {
-      method: 'POST', body: JSON.stringify({ directory: elements.directoryPath.value.trim(), name: elements.directoryName.value }),
-    });
-    elements.directoryName.value = '';
-    await loadDirectory(result.directory);
+    const result = await api('/api/select-directory', { method: 'POST', body: '{}' });
+    if (result.directory) elements.directory.value = result.directory;
   } catch (error) {
-    showDirectoryMessage(error.message);
+    showMessage(error.message);
   } finally {
-    setDirectoryBusy(false);
-  }
-});
-
-elements.directoryConfirm.addEventListener('click', async () => {
-  if (directoryBusy || !selectedDirectory) return;
-  setDirectoryBusy(true);
-  showDirectoryMessage('');
-  try {
-    const result = await api('/api/select-directory', {
-      method: 'POST', body: JSON.stringify({ directory: elements.directoryPath.value.trim() }),
-    });
-    elements.directory.value = result.directory;
-    elements.directoryDialog.close();
-  } catch (error) {
-    showDirectoryMessage(error.message);
-  } finally {
-    setDirectoryBusy(false);
+    setBusy(elements.directoryButton, false, '选择…');
   }
 });
 

@@ -1,9 +1,0 @@
-# Only application sources enter the build context.
-**
-!Dockerfile
-!.dockerignore
-!package.json
-!src/
-!src/**
-!public/
-!public/**

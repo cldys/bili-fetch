@@ -15,16 +15,12 @@ const EXECUTABLE_CANDIDATES = {
   ],
 };
 
-export const DEFAULT_DOWNLOAD_DIRECTORY = process.env.BILIFETCH_DOWNLOAD_DIRECTORY || path.join(
+export const DEFAULT_DOWNLOAD_DIRECTORY = path.join(
   os.homedir(),
   "Downloads",
   "download",
   "BiliFetch",
 );
-
-export const DOWNLOAD_ROOTS = process.env.BILIFETCH_DOWNLOAD_ROOTS
-  ? JSON.parse(process.env.BILIFETCH_DOWNLOAD_ROOTS)
-  : [process.env.BILIFETCH_DOWNLOAD_ROOT || os.homedir()];
 
 async function isExecutable(filePath) {
   try {
