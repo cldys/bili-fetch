@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -37,7 +37,7 @@ if (args.includes('--list-subs')) {
     fs.writeFileSync(file, '1\\n00:00:01,000 --> 00:00:02,000\\n大家好\\n\\n2\\n00:00:02,000 --> 00:00:03,000\\n大家好今天\\n');
     return file;
   });
-  console.log('SUBTITLE_FILES:' + JSON.stringify(files));
+  console.log('SUBTITLE_FILES:' + JSON.stringify(metadata.invalidSubtitlePath ? [path.join(output, '..', 'outside.srt')] : files));
 } else console.log('[download] 100%');
 `, { mode: 0o700 });
     const request = {
@@ -64,6 +64,11 @@ if (args.includes('--list-subs')) {
     }
     assert.ok(!['queued', 'probing', 'downloading'].includes(finished.status), 'fixture job completed within timeout');
     const calls = (await readFile(callsFile, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+    for (const args of calls.filter((args) => args.includes('--write-subs'))) {
+      const downloadDirectory = args[args.indexOf('--paths') + 1];
+      assert.notEqual(downloadDirectory, subtitlesDirectory);
+      await assert.rejects(access(downloadDirectory), { code: 'ENOENT' });
+    }
     const artifacts = Object.fromEntries(await Promise.all((await readdir(subtitlesDirectory))
       .map(async (file) => [file, await readFile(path.join(subtitlesDirectory, file), 'utf8')])));
     return { job: finished, calls, artifacts, history };
@@ -89,14 +94,14 @@ test('subtitle-only requests with no Bilibili subtitles finish as skipped', asyn
   assert.equal(calls.length, 1);
 });
 
-test('downloads available Bilibili AI subtitles with the existing default', async () => {
+test('downloads available Bilibili AI subtitles as cleaned TXT without retaining SRT', async () => {
   const { job, calls, artifacts } = await runFixtureJob({ subtitles: true }, { id: 'BV123', subtitles: { 'ai-zh': [{}] } });
   assert.equal(job.status, 'completed');
   assert.equal(job.tasks[0].id, 'subtitles');
   assert.ok(calls[1].includes('ai-zh'));
   assert.ok(calls[1].includes('--convert-subs'));
   assert.equal(artifacts['Fixture [BV123].ai-zh_清理.txt'], '大家好今天');
-  assert.ok(artifacts['Fixture [BV123].ai-zh.srt'].includes('-->'));
+  assert.equal(artifacts['Fixture [BV123].ai-zh.srt'], undefined);
   assert.equal(artifacts['Unrelated.srt'], 'Unrelated file');
   assert.equal(artifacts['Unrelated_清理.txt'], undefined);
 });
@@ -109,7 +114,17 @@ test('failed subtitle probing still allows a complete audio task', async () => {
   assert.match(friendlyFailure({ stdout: '', stderr: 'ERROR: unrelated failure', code: 1 }), /unrelated failure/);
 });
 
-test('processes batch links serially and creates a separate SRT and TXT for each video', async () => {
+test('cleans temporary SRT files when subtitle post-processing fails', async () => {
+  const { job, artifacts } = await runFixtureJob({ audio: true, subtitles: true }, {
+    id: 'BV123', subtitles: { 'ai-zh': [{}] }, invalidSubtitlePath: true,
+  });
+  assert.equal(job.status, 'partial');
+  assert.deepEqual(job.tasks.map((task) => [task.id, task.status]), [['audio', 'completed'], ['subtitles', 'failed']]);
+  assert.equal(job.tasks[1].message, '字幕文件路径无效');
+  assert.deepEqual(artifacts, { 'Unrelated.srt': 'Unrelated file' });
+});
+
+test('processes batch links serially and retains only a separate cleaned TXT for each video', async () => {
   const urls = ['https://www.bilibili.com/video/BV1', 'https://www.bilibili.com/video/BV2'];
   const { job, calls, artifacts, history } = await runFixtureJob({ subtitles: true }, { byUrl: {
     [urls[0]]: { id: 'BV1', title: 'First', subtitles: { 'ai-zh': [{}] } },
@@ -121,7 +136,7 @@ test('processes batch links serially and creates a separate SRT and TXT for each
   assert.deepEqual(job.items.map((item) => [item.url, item.title, item.status]), [[urls[0], 'First', 'completed'], [urls[1], 'Second', 'completed']]);
   assert.deepEqual(calls.map((args) => args.at(-1)), [urls[0], urls[0], urls[1], urls[1]]);
   for (const id of ['BV1', 'BV2']) {
-    assert.ok(artifacts[`Fixture [${id}].ai-zh.srt`].includes('-->'));
+    assert.equal(artifacts[`Fixture [${id}].ai-zh.srt`], undefined);
     assert.equal(artifacts[`Fixture [${id}].ai-zh_清理.txt`], '大家好今天');
   }
   assert.ok(history.some((state) => state.currentIndex === 2 && state.processed === 1));

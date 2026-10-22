@@ -1,5 +1,6 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { buildDownloadTasks, buildProbeArguments } from './commands.js';
 import { parseProbeOutput, selectSubtitleTracks } from './subtitles.js';
@@ -72,6 +73,19 @@ function parseProgress(line) {
 }
 
 async function executeTask(job, task, plan, executable, env) {
+  if (task.id !== 'subtitles') return executeDownloadTask(job, task, plan, executable, env);
+
+  const downloadDirectory = await mkdtemp(path.join(os.tmpdir(), 'bilifetch-subtitles-'));
+  try {
+    const argumentsList = [...plan.arguments];
+    argumentsList[argumentsList.indexOf('--paths') + 1] = downloadDirectory;
+    await executeDownloadTask(job, task, { ...plan, downloadDirectory, arguments: argumentsList }, executable, env);
+  } finally {
+    await rm(downloadDirectory, { recursive: true, force: true });
+  }
+}
+
+async function executeDownloadTask(job, task, plan, executable, env) {
   await mkdir(plan.outputDirectory, { recursive: true });
   task.status = 'running';
   task.progress = 0;
@@ -97,14 +111,14 @@ async function executeTask(job, task, plan, executable, env) {
         for (const line of result.stdout.split(/\r?\n/)) {
           if (!line.startsWith('SUBTITLE_FILES:')) continue;
           for (const file of JSON.parse(line.slice('SUBTITLE_FILES:'.length))) {
-            const relative = path.relative(plan.outputDirectory, file);
+            const relative = path.relative(plan.downloadDirectory, file);
             if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
               || path.extname(file).toLowerCase() !== '.srt') throw new Error('字幕文件路径无效');
             files.add(file);
           }
         }
         if (!files.size) throw new Error('未获取到已下载的 SRT 文件');
-        for (const file of files) await exportSubtitleText(file);
+        for (const file of files) await exportSubtitleText(file, plan.outputDirectory);
       } catch (error) {
         task.status = 'failed';
         task.message = error.message;

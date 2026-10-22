@@ -58,8 +58,8 @@ export function cleanSrtText(srt) {
   return chunks.join('');
 }
 
-export async function exportSubtitleText(filePath) {
-  const outputPath = filePath.slice(0, -path.extname(filePath).length) + '_清理.txt';
+export async function exportSubtitleText(filePath, outputDirectory = path.dirname(filePath)) {
+  const outputPath = path.join(outputDirectory, path.basename(filePath, path.extname(filePath)) + '_清理.txt');
   const text = cleanSrtText(await readFile(filePath, 'utf8'));
   try {
     await writeFile(outputPath, text, { encoding: 'utf8', flag: 'wx' });
